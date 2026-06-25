@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<extension version="2.5" type="plugin" group="vmpayment" method="upgrade">
+	<name>VM Payment - xmr-pay (Monero)</name>
+	<author>SlowBearDigger</author>
+	<creationDate>June 2026</creationDate>
+	<copyright>(C) 2026 SlowBearDigger. MIT licensed.</copyright>
+	<license>https://opensource.org/licenses/MIT MIT</license>
+	<authorEmail>slowbeardigger@proton.me</authorEmail>
+	<authorUrl>https://github.com/SlowBearDigger</authorUrl>
+	<version>1.0.0</version>
+	<description>Non-custodial Monero payments for VirtueMart. View key only — no wallet-rpc, no daemon; funds go straight to the merchant's wallet.</description>
+	<files>
+		<filename plugin="xmrpay">xmrpay.php</filename>
+		<filename>VirtueMartOrderStore.php</filename>
+		<filename>qrcode.min.js</filename>
+		<folder>language</folder>
+		<folder>xmrpay</folder>
+		<folder>engine</folder>
+		<folder>views</folder>
+	</files>
+	<vmconfig>
+		<fields name="params">
+			<fieldset name="payment" addfieldpath="/administrator/components/com_virtuemart/fields">
+				<field name="checkConditionsCore" value="1" default="1" type="hidden" />
+				<field name="payment_currency" type="vmacceptedcurrency" default=""
+					label="VMPAYMENT_XMRPAY_CURRENCY" description="VMPAYMENT_XMRPAY_CURRENCY_DESC" />
+				<field name="status_pending" type="vmorderstate" scope="com_virtuemart" default="U"
+					label="VMPAYMENT_XMRPAY_STATUS_PENDING" description="VMPAYMENT_XMRPAY_STATUS_PENDING_DESC" />
+				<field name="status_paid" type="vmorderstate" scope="com_virtuemart" default="C"
+					label="VMPAYMENT_XMRPAY_STATUS_PAID" description="VMPAYMENT_XMRPAY_STATUS_PAID_DESC" />
+			</fieldset>
+			<fieldset name="xmrpay">
+				<field name="xmr_address" type="text" size="80"
+					label="VMPAYMENT_XMRPAY_ADDRESS" description="VMPAYMENT_XMRPAY_ADDRESS_DESC" />
+				<field name="xmr_view_key" type="text" size="80"
+					label="VMPAYMENT_XMRPAY_VIEW_KEY" description="VMPAYMENT_XMRPAY_VIEW_KEY_DESC" />
+				<field name="xmr_nodes" type="textarea" cols="60" rows="3"
+					label="VMPAYMENT_XMRPAY_NODES" description="VMPAYMENT_XMRPAY_NODES_DESC" />
+				<field name="xmr_network" type="list" default="mainnet"
+					label="VMPAYMENT_XMRPAY_NETWORK" description="VMPAYMENT_XMRPAY_NETWORK_DESC">
+					<option value="mainnet">mainnet</option>
+					<option value="stagenet">stagenet</option>
+					<option value="testnet">testnet</option>
+				</field>
+				<field name="xmr_min_confirmations" type="text" default="10"
+					label="VMPAYMENT_XMRPAY_MIN_CONF" description="VMPAYMENT_XMRPAY_MIN_CONF_DESC" />
+				<field name="xmr_index_offset" type="text" default="0"
+					label="VMPAYMENT_XMRPAY_INDEX_OFFSET" description="VMPAYMENT_XMRPAY_INDEX_OFFSET_DESC" />
+				<field name="xmr_rate_source" type="list" default="coingecko"
+					label="VMPAYMENT_XMRPAY_RATE_SOURCE" description="VMPAYMENT_XMRPAY_RATE_SOURCE_DESC">
+					<option value="coingecko">CoinGecko (automatic)</option>
+					<option value="fixed">Fixed rate</option>
+					<option value="custom">Custom price URL</option>
+				</field>
+				<field name="xmr_fixed_rate" type="text" default=""
+					label="VMPAYMENT_XMRPAY_FIXED_RATE" description="VMPAYMENT_XMRPAY_FIXED_RATE_DESC" />
+				<field name="xmr_rate_url" type="text" size="80" default=""
+					label="VMPAYMENT_XMRPAY_RATE_URL" description="VMPAYMENT_XMRPAY_RATE_URL_DESC" />
+			</fieldset>
+		</fields>
+	</vmconfig>
+</extension>

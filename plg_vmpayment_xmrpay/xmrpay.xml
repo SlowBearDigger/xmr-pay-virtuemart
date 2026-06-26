@@ -7,7 +7,7 @@
 	<license>https://opensource.org/licenses/MIT MIT</license>
 	<authorEmail>slowbeardigger@proton.me</authorEmail>
 	<authorUrl>https://github.com/SlowBearDigger</authorUrl>
-	<version>1.0.0</version>
+	<version>1.0.1</version>
 	<description>Non-custodial Monero payments for VirtueMart. View key only — no wallet-rpc, no daemon; funds go straight to the merchant's wallet.</description>
 	<files>
 		<filename plugin="xmrpay">xmrpay.php</filename>
@@ -56,6 +56,8 @@
 					label="VMPAYMENT_XMRPAY_FIXED_RATE" description="VMPAYMENT_XMRPAY_FIXED_RATE_DESC" />
 				<field name="xmr_rate_url" type="text" size="80" default=""
 					label="VMPAYMENT_XMRPAY_RATE_URL" description="VMPAYMENT_XMRPAY_RATE_URL_DESC" />
+				<field name="xmr_return_url" type="url" size="80" default=""
+					label="VMPAYMENT_XMRPAY_RETURN_URL" description="VMPAYMENT_XMRPAY_RETURN_URL_DESC" />
 			</fieldset>
 		</fields>
 	</vmconfig>

@@ -32,7 +32,7 @@ class VirtueMartOrderStore implements OrderStore
 
     public function loadPending(): iterable
     {
-        $db = \Joomla\CMS\Factory::getDbo();
+        $db = \Joomla\CMS\Factory::getContainer()->get(\Joomla\Database\DatabaseInterface::class);
         $q  = $db->getQuery(true)
             ->select('p.' . $db->quoteName('virtuemart_order_id'))
             ->from($db->quoteName($this->table, 'p'))
@@ -59,7 +59,7 @@ class VirtueMartOrderStore implements OrderStore
     /** The contract row for one order, or null. Reused by the checkout poll. */
     public function loadOne(int $orderId)
     {
-        $db = \Joomla\CMS\Factory::getDbo();
+        $db = \Joomla\CMS\Factory::getContainer()->get(\Joomla\Database\DatabaseInterface::class);
         $q  = $db->getQuery(true)
             ->select($db->quoteName(array('xmr_birthday_height', 'xmr_scanned_to', 'xmr_matches', 'xmr_amount')))
             ->from($db->quoteName($this->table))
@@ -89,7 +89,7 @@ class VirtueMartOrderStore implements OrderStore
 
     public function saveProgress(int $orderId, array $patch): void
     {
-        $db  = \Joomla\CMS\Factory::getDbo();
+        $db  = \Joomla\CMS\Factory::getContainer()->get(\Joomla\Database\DatabaseInterface::class);
         $set = array();
         if (array_key_exists('birthday_height', $patch)) $set[] = $db->quoteName('xmr_birthday_height') . ' = ' . (int) $patch['birthday_height'];
         if (array_key_exists('scanned_to', $patch))      $set[] = $db->quoteName('xmr_scanned_to') . ' = ' . (int) $patch['scanned_to'];
@@ -108,7 +108,7 @@ class VirtueMartOrderStore implements OrderStore
     public function isSettled(string $txid): bool
     {
         try {
-            $db = \Joomla\CMS\Factory::getDbo();
+            $db = \Joomla\CMS\Factory::getContainer()->get(\Joomla\Database\DatabaseInterface::class);
             $db->setQuery('SELECT COUNT(*) FROM ' . $db->quoteName($this->table) . ' WHERE ' . $db->quoteName('xmr_txid') . ' = ' . $db->quote($txid));
             return (bool) $db->loadResult();
         } catch (\Throwable $e) {
@@ -118,7 +118,7 @@ class VirtueMartOrderStore implements OrderStore
 
     public function markPaid(int $orderId, string $txid, array $verdict): void
     {
-        $db = \Joomla\CMS\Factory::getDbo();
+        $db = \Joomla\CMS\Factory::getContainer()->get(\Joomla\Database\DatabaseInterface::class);
 
         // claim the txid on this order's row: the WHERE xmr_txid IS NULL means only one of two
         // overlapping runs flips it; the loser's affected-rows is 0 and bails before crediting.

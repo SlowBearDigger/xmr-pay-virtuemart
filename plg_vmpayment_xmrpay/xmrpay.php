@@ -13,7 +13,7 @@
 defined('_JEXEC') or die('Restricted access');
 
 if (!class_exists('vmPSPlugin')) {
-    require_once JPATH_VM_PLUGINS . DS . 'vmpsplugin.php';
+    require_once JPATH_VM_PLUGINS . DIRECTORY_SEPARATOR . 'vmpsplugin.php';
 }
 
 require_once __DIR__ . '/engine/load.php';
@@ -75,7 +75,7 @@ class plgVmPaymentXmrpay extends vmPSPlugin
         // the atomic UPDATE...WHERE xmr_txid IS NULL guard is ever weakened. Tolerant — ignore if the
         // index already exists (re-install) or the DB engine rejects it.
         try {
-            $db    = \Joomla\CMS\Factory::getDbo();
+            $db    = \Joomla\CMS\Factory::getContainer()->get(\Joomla\Database\DatabaseInterface::class);
             $table = $db->getPrefix() . 'virtuemart_payment_plg_xmrpay';
             $db->setQuery("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = " . $db->quote($table) . " AND index_name = 'uk_xmrpay_txid'");
             if (!(int) $db->loadResult()) {
@@ -102,7 +102,7 @@ class plgVmPaymentXmrpay extends vmPSPlugin
             return false;
         }
         if (!class_exists('VirtueMartModelOrders')) {
-            require_once JPATH_VM_ADMINISTRATOR . DS . 'models' . DS . 'orders.php';
+            require_once JPATH_VM_ADMINISTRATOR . DIRECTORY_SEPARATOR . 'models' . DIRECTORY_SEPARATOR . 'orders.php';
         }
         VmConfig::loadJLang('com_virtuemart', true);
 
@@ -165,6 +165,7 @@ class plgVmPaymentXmrpay extends vmPSPlugin
             'min_confirmations'             => (int) $cfg['min_confirmations'],
             'poll_url'                      => 'index.php?option=com_virtuemart&view=vmplg&task=pluginNotification&on=' . $orderId . '&token=' . Gateway::orderToken($orderId, (string) $cfg['view_key']),
             'node_error'                    => ($sub === '' || $xmr === ''),
+            'return_url'                    => isset($method->xmr_return_url) ? (string) $method->xmr_return_url : '',
         ));
 
         $cart->emptyCart();

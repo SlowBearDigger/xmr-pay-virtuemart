@@ -14,6 +14,6 @@ $fiat      = isset($viewData['displayTotalInPaymentCurrency']) ? $viewData['disp
 $err       = !empty($viewData['node_error']);
 $qrLibUrl  = \Joomla\CMS\Uri\Uri::root(true) . '/plugins/vmpayment/xmrpay/qrcode.min.js';
 $pollUrl   = !empty($viewData['poll_url']) ? (\Joomla\CMS\Uri\Uri::root(true) . '/' . $viewData['poll_url']) : '';
-$returnUrl = '';
+$returnUrl = isset($viewData['return_url']) ? (string) $viewData['return_url'] : '';
 
 require __DIR__ . '/../../views/pay_card.php';

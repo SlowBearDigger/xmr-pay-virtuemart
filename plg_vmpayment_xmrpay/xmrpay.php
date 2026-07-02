@@ -306,10 +306,26 @@ class plgVmPaymentXmrpay extends vmPSPlugin
                         \Joomla\CMS\Factory::getApplication()->enqueueMessage('xmr-pay: the address does not look valid.', 'warning');
                     } elseif (empty($v['key_match'])) {
                         \Joomla\CMS\Factory::getApplication()->enqueueMessage('xmr-pay: the view key does not match the address.', 'warning');
+                    } elseif (empty(trim((string) $table->xmr_nodes))) {
+                        \Joomla\CMS\Factory::getApplication()->enqueueMessage('xmr-pay: no node is configured, so payments will never be detected. Add at least one Monero node (one per line).', 'warning');
+                    } else {
+                        // the keys check above is purely local (no network) -- this is the only place
+                        // that actually confirms the configured node(s) are reachable FROM THIS SERVER.
+                        try {
+                            $tip = $g->scanner()->tip_height();
+                        } catch (\Throwable $e) {
+                            $tip = null;
+                        }
+                        if ($tip === null) {
+                            \Joomla\CMS\Factory::getApplication()->enqueueMessage('xmr-pay: could not reach any of the configured Monero nodes from this server. Payments will not be detected until this is fixed -- double-check the Nodes field and that your host allows outbound connections to those addresses/ports.', 'warning');
+                        } else {
+                            \Joomla\CMS\Factory::getApplication()->enqueueMessage('xmr-pay: connected -- current ' . $table->xmr_network . ' block height ' . $tip . '.', 'message');
+                        }
                     }
                 }
             } catch (\Throwable $e) {
-                // a node hiccup at save time must not block saving
+                // an unexpected local error -- not a network message, since the network check itself
+                // is inside the nested try above.
             }
         }
         return $r;

@@ -61,7 +61,7 @@ class VirtueMartOrderStore implements OrderStore
     {
         $db = \Joomla\CMS\Factory::getContainer()->get(\Joomla\Database\DatabaseInterface::class);
         $q  = $db->getQuery(true)
-            ->select($db->quoteName(array('xmr_birthday_height', 'xmr_scanned_to', 'xmr_matches', 'xmr_amount')))
+            ->select($db->quoteName(array('xmr_birthday_height', 'xmr_scanned_to', 'xmr_matches', 'xmr_amount', 'xmr_received_pico')))
             ->from($db->quoteName($this->table))
             ->where($db->quoteName('virtuemart_order_id') . ' = ' . (int) $orderId)
             ->order($db->quoteName('id') . ' DESC');
@@ -84,6 +84,9 @@ class VirtueMartOrderStore implements OrderStore
             'matches'         => $matches,
             'xmr_amount'      => (string) ($r->xmr_amount !== null ? $r->xmr_amount : '0'),
             'status'          => 'pending',
+            // extra (not part of the OrderStore contract; the Settler ignores it): funds seen so far,
+            // so the checkout poll can report partial-payment progress to the buyer.
+            'received_pico'   => (string) (isset($r->xmr_received_pico) && $r->xmr_received_pico !== null ? $r->xmr_received_pico : '0'),
         );
     }
 

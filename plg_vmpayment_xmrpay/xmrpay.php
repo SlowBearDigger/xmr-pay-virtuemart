@@ -36,6 +36,13 @@ class plgVmPaymentXmrpay extends vmPSPlugin
         $varsToPush = $this->getVarsToPush();
         $this->addVarsToPushCore($varsToPush, 1);
         $this->setConfigParameterable($this->_configTableFieldName, $varsToPush);
+
+        if (\Joomla\CMS\Factory::getApplication()->isClient('administrator')) {
+            $doc  = \Joomla\CMS\Factory::getDocument();
+            $base = \Joomla\CMS\Uri\Uri::root(true) . '/plugins/vmpayment/xmrpay/assets/';
+            $doc->addStyleSheet($base . 'admin-nodes.css');
+            $doc->addScript($base . 'admin-nodes.js');
+        }
     }
 
     /** The plugin's own per-order data table: scan state lives here, keyed by virtuemart_order_id. */
@@ -330,30 +337,13 @@ class plgVmPaymentXmrpay extends vmPSPlugin
                         // actual admin-backend request, so a script updating params in bulk never
                         // inherits a slow/blocking network call it didn't ask for.
                     } else {
-                        // the keys check above is purely local (no network) -- this is the only place
-                        // that actually confirms the configured node(s) are reachable FROM THIS SERVER.
-                        // tip_height() queries EVERY configured node (by design -- a lying node can only
-                        // delay settlement, never accelerate it, see Scanner::tip_height). a short
-                        // dedicated timeout keeps a save with several dead nodes from hanging the admin
-                        // request past PHP's/the webserver's execution limit; the real settlement scan
-                        // (Settler/task) is unaffected, it builds its own Gateway with the normal timeout.
                         try {
                             $probeCfg = $this->cfgFromMethod($table);
-                            $probeCfg['http_timeout'] = 5;
-                            // cap how many of the configured nodes this save-time probe touches, so a
-                            // long pasted list can't push the worst case (5s x count) past the save
-                            // request's own time budget; the real settlement scan is not capped.
-                            $probeNodes = preg_split('/[\r\n,]+/', (string) $probeCfg['nodes']);
-                            $probeCfg['nodes'] = implode(',', array_slice(array_filter($probeNodes), 0, 6));
-                            $tip = (new Gateway($probeCfg))->scanner()->tip_height();
+                            $results  = $this->probeNodes($probeCfg);
                         } catch (\Throwable $e) {
-                            $tip = null;
+                            $results = null;
                         }
-                        if ($tip === null) {
-                            \Joomla\CMS\Factory::getApplication()->enqueueMessage('xmr-pay: could not reach any of the configured Monero nodes from this server. Payments will not be detected until this is fixed -- double-check the Nodes field and that your host allows outbound connections to those addresses/ports.', 'warning');
-                        } else {
-                            \Joomla\CMS\Factory::getApplication()->enqueueMessage('xmr-pay: connected -- current ' . $table->xmr_network . ' block height ' . $tip . '.', 'message');
-                        }
+                        $this->reportNodeProbe($results);
                     }
                 }
             } catch (\Throwable $e) {
@@ -382,6 +372,7 @@ class plgVmPaymentXmrpay extends vmPSPlugin
             'address'           => isset($method->xmr_address) ? $method->xmr_address : '',
             'view_key'          => isset($method->xmr_view_key) ? $method->xmr_view_key : '',
             'nodes'             => isset($method->xmr_nodes) ? $method->xmr_nodes : '',
+            'http_timeout'      => max(2, min(60, (int) (isset($method->xmr_http_timeout) ? $method->xmr_http_timeout : 20))),
             'network'           => !empty($method->xmr_network) ? $method->xmr_network : 'mainnet',
             'min_confirmations' => (int) (isset($method->xmr_min_confirmations) ? $method->xmr_min_confirmations : 10),
             'index_offset'      => (int) (isset($method->xmr_index_offset) ? $method->xmr_index_offset : 0),
@@ -397,5 +388,55 @@ class plgVmPaymentXmrpay extends vmPSPlugin
         $app->sendHeaders();
         echo json_encode(array_merge(array('paid' => (bool) $paid, 'status' => $status), (array) $extra));
         $app->close();
+    }
+
+    /** Check every saved node independently so a broken secondary is never hidden by failover. */
+    private function probeNodes(array $cfg)
+    {
+        $nodes   = \XmrPay\NodeConfig::normalizeList($cfg['nodes']);
+        $public  = \XmrPay\NodeConfig::publicList($nodes);
+        // a short dedicated timeout, and a cap on how many rows this save-time probe touches,
+        // keep a save with several dead nodes from hanging the admin request past PHP's/the
+        // webserver's execution limit; the real settlement scan (Settler/task) is unaffected,
+        // it builds its own Gateway with the configured timeout.
+        $cfg['http_timeout'] = 5;
+        $results = array();
+        foreach (array_slice($nodes, 0, 6, true) as $index => $node) {
+            $one          = $cfg;
+            $one['nodes'] = array($node);
+            $scanner      = (new Gateway($one))->scanner();
+            $tip          = $scanner->tip_height();
+            $error        = method_exists($scanner, 'last_node_error') ? $scanner->last_node_error() : array();
+            $results[]    = array(
+                'number' => $index + 1,
+                'url'    => isset($public[$index]['url']) ? $public[$index]['url'] : '',
+                'tip'    => $tip,
+                'error'  => isset($error['code']) ? $error['code'] : 'unavailable',
+            );
+        }
+        return $results;
+    }
+
+    /** Node failures are warnings only. Saving remains non-blocking and explicit. */
+    private function reportNodeProbe($results)
+    {
+        $app = \Joomla\CMS\Factory::getApplication();
+        if (!is_array($results)) {
+            $app->enqueueMessage('xmr-pay: node settings were saved, but could not be checked. Review the node rows and try again.', 'warning');
+            return;
+        }
+        $failed = array_values(array_filter($results, function ($row) { return $row['tip'] === null; }));
+        if (!$failed) {
+            $app->enqueueMessage('xmr-pay: checked ' . count($results) . ' Monero node(s). All are connected.', 'message');
+            return;
+        }
+        $details = array_map(function ($row) {
+            return 'Node ' . $row['number'] . ' (' . $row['url'] . '): ' . $row['error'];
+        }, $failed);
+        $working = count($results) - count($failed);
+        $suffix  = $working > 0
+            ? ' Working nodes remain active. Review or replace the unavailable node(s).'
+            : ' Settings were saved, but payment detection will wait until a node reconnects.';
+        $app->enqueueMessage('xmr-pay: checked ' . count($results) . ' node(s). ' . implode('; ', $details) . '.' . $suffix, 'warning');
     }
 }

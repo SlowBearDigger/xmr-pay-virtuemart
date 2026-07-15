@@ -7,7 +7,7 @@
 	<license>https://opensource.org/licenses/MIT MIT</license>
 	<authorEmail>slowbeardigger@proton.me</authorEmail>
 	<authorUrl>https://github.com/SlowBearDigger</authorUrl>
-	<version>1.0.6</version>
+	<version>1.0.7</version>
 	<description>Non-custodial Monero payments for VirtueMart. View key only — no wallet-rpc, no daemon; funds go straight to the merchant's wallet.</description>
 	<files>
 		<filename plugin="xmrpay">xmrpay.php</filename>
@@ -17,6 +17,7 @@
 		<folder>xmrpay</folder>
 		<folder>engine</folder>
 		<folder>views</folder>
+		<folder>assets</folder>
 	</files>
 	<vmconfig>
 		<fields name="params">
@@ -36,6 +37,8 @@
 					label="VMPAYMENT_XMRPAY_VIEW_KEY" description="VMPAYMENT_XMRPAY_VIEW_KEY_DESC" />
 				<field name="xmr_nodes" type="textarea" cols="60" rows="3"
 					label="VMPAYMENT_XMRPAY_NODES" description="VMPAYMENT_XMRPAY_NODES_DESC" />
+				<field name="xmr_http_timeout" type="number" default="20" min="2" max="60" step="1"
+					label="VMPAYMENT_XMRPAY_HTTP_TIMEOUT" description="VMPAYMENT_XMRPAY_HTTP_TIMEOUT_DESC" />
 				<field name="xmr_network" type="list" default="mainnet"
 					label="VMPAYMENT_XMRPAY_NETWORK" description="VMPAYMENT_XMRPAY_NETWORK_DESC">
 					<option value="mainnet">mainnet</option>

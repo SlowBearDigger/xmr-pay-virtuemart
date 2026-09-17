@@ -24,6 +24,7 @@ engine + `OrderStore`/`Settler` contract as the [HikaShop adapter](../xmr-pay-hi
    Payment element. Fill in your wallet's primary address, its private view key (never the spend
    key), and one or more Monero nodes, one per line. A public node is fine to start; run your own for
    real money. Saving now actually tries to reach your node(s) and tells you immediately if it can't.
+   If you use a custom price feed, its URL must be public HTTPS; private addresses and redirects are rejected.
 5. Create the background sweep. Go to System, Scheduled Tasks, New Task, and pick "xmr-pay: settle
    pending Monero orders (VirtueMart)". Save it, then set up Joomla's Web Cron under Global
    Configuration, System tab, Scheduler (or the ad-hoc URL Joomla shows on the task page). VirtueMart

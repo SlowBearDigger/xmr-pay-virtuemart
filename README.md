@@ -2,17 +2,17 @@
 
 A non-custodial Monero payment method for VirtueMart on Joomla 5.4+. The order is placed pending at
 checkout and the buyer sees a receiving subaddress + the exact XMR amount + a live poll; the order
-settles once the engine confirms a real on-chain payment. View key only — no `monero-wallet-rpc`, no
-daemon — funds go straight to the merchant's wallet.
+settles once the engine confirms a real on-chain payment. View key only: no `monero-wallet-rpc`, no
+daemon: funds go straight to the merchant's wallet.
 
-Built on the shared [xmr-pay engine](../xmr-pay-php) + [adapter core](../xmr-pay-adapter-core),
+Built on the shared [xmr-pay engine](https://github.com/SlowBearDigger/xmr-pay-php) + [adapter core](https://github.com/SlowBearDigger/xmr-pay-adapter-core),
 vendored into the plugin. The Monero work lives in the engine; this package is the thin VirtueMart
 layer, modelled on VirtueMart's bundled offline plugin (`standard` / bank transfer). It is the same
-engine + `OrderStore`/`Settler` contract as the [HikaShop adapter](../xmr-pay-hikashop).
+engine + `OrderStore`/`Settler` contract as the [HikaShop adapter](https://github.com/SlowBearDigger/xmr-pay-hikashop).
 
 ## Install
 
-1. Download `pkg_xmrpay_virtuemart.zip` from the [latest release](../../releases/latest).
+1. Download `pkg_xmrpay_virtuemart.zip` from the [latest release](https://github.com/SlowBearDigger/xmr-pay-virtuemart/releases).
 2. In the Joomla admin, go to System, Install, Extensions, Upload Package File, and select the zip.
    One package installs both the payment plugin and the settlement scheduler task.
 3. Enable both plugins. Joomla installs every third-party plugin disabled by default; this is a
@@ -24,7 +24,7 @@ engine + `OrderStore`/`Settler` contract as the [HikaShop adapter](../xmr-pay-hi
    Payment element. Fill in your wallet's primary address, its private view key (never the spend
    key), and one or more Monero nodes, one per line. A public node is fine to start; run your own for
    real money. Saving now actually tries to reach your node(s) and tells you immediately if it can't.
-   If you use a custom price feed, its URL must be public HTTPS; private addresses and redirects are rejected.
+   If you use a custom price feed, its URL must be public HTTPS with a public IPv4 address; cURL is required and private addresses and redirects are rejected.
 5. Create the background sweep. Go to System, Scheduled Tasks, New Task, and pick "xmr-pay: settle
    pending Monero orders (VirtueMart)". Save it, then set up Joomla's Web Cron under Global
    Configuration, System tab, Scheduler (or the ad-hoc URL Joomla shows on the task page). VirtueMart
@@ -40,7 +40,7 @@ plg_vmpayment_xmrpay/        # the payment method plugin
   xmrpay/tmpl/post_payment.php  # checkout screen: subaddress + amount + monero: link + QR + poll
   VirtueMartOrderStore.php   # implements XmrPay\Adapter\OrderStore over VM's order API
   xmrpay.xml                 # manifest (vmconfig fields; the data table is created by the VM hook)
-  qrcode.min.js              # local client-side QR (the address never leaves the browser)
+  qrcode.min.js              # local client-side QR (no external QR service)
   engine/                    # vendored engine + adapter core + load.php
   language/
 plg_task_xmrpaysettle_vm/    # Joomla 5 Scheduler task → Settler::run()
@@ -58,33 +58,21 @@ plg_task_xmrpaysettle_vm/    # Joomla 5 Scheduler task → Settler::run()
 | checkout "is it paid?" poll | `plgVmOnPaymentNotification` (vmplg `pluginNotification` route) → `Settler::settleOrder` → JSON `{paid,status}` |
 | background sweep | a Joomla 5 `task` plugin → `Settler::run()` |
 
-## Status — COMPLETE
+## Validation
 
-- ✅ Payment plugin + task plugin build, install (`extension:install`), and enable on Joomla 5.4.6 + VirtueMart 4.6.4.
-- ✅ Vendored engine loads in the Joomla runtime; `Gateway`/`xmrAmount` (curl rate fetch) work.
-- ✅ **Full checkout walkthrough** in a browser (product → cart → shipment + Monero payment → Confirm
-  Purchase) renders our `post_payment` screen: locked XMR amount (fiat→XMR via the rate), the real
-  derived subaddress, a `monero:` deep link, a client-side QR, and the live poll. The order is created
-  pending (status `U`), the scan state is stored in `#__virtuemart_payment_plg_xmrpay`, and the poll
-  ran (advanced the scan checkpoint) — proving the `plgVmOnPaymentNotification` → `Settler::settleOrder`
-  chain.
-- ✅ **Task plugin runs via Web Cron** (`last_exit_code = 0`): bootstraps VirtueMart, parses each
-  method's pipe `key="value"|` params, builds `Gateway` + `VirtueMartOrderStore`, runs `Settler::run()`.
-
-### Found + fixed during the build
-
-- `plgVmDeclarePluginParamsPaymentVM3` takes **one** arg (`&$data`), not three — a wrong signature
-  threw "Too few arguments" on save. All other lifecycle signatures verified against `standard.php`.
+The original integration was exercised on Joomla 5.4.6 with VirtueMart 4.6.4.
+Rebuilt packages still need a full staging checkout and background-settlement test
+before deployment. Source tests and a prior platform run do not validate a new build.
 
 ## Notes
 
 - The plugin needs a working VirtueMart install: the AIO package (provides
   `script.vmallinone.php` + bundled plugins), then VM's sample-data install (vendor + products +
   shipping). Image/log dirs must be writable by the web user. A shipment method must *match* the order
-  (the bundled weight_countries needs a weight range) before any payment method shows — VM checkout is
+  (the bundled weight_countries needs a weight range) before any payment method shows: VM checkout is
   progressive.
 - `payment_params` are stored in VM's own pipe format: `key="value"|key2="value2"|`.
-- Like HikaShop, VirtueMart assumes a **web application** — the settlement task runs under Joomla's
+- Like HikaShop, VirtueMart assumes a **web application**: the settlement task runs under Joomla's
   Web Cron, not the CLI scheduler.
 - The plugin reads its config via VM's param machinery (`$method->xmr_address` etc.); the inner data
   table holds only per-order scan state.

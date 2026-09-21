@@ -1,13 +1,6 @@
 <?php
+// Map payment-order storage to VirtueMart.
 
-/**
- * The VirtueMart side of the storage contract the engine's Settler drives. Per-order scan state (the
- * receiving subaddress, the locked XMR amount, the birthday height, the scan checkpoint, the
- * accumulated matches and the settled txid) lives in the payment plugin's own table
- * #__virtuemart_payment_plg_xmrpay, one row per order. Marking paid goes through VirtueMart's order
- * model so its stock / invoice / notification logic runs. Txid dedup uses the xmr_txid column as the
- * guard — VirtueMart has no native dedup.
- */
 
 defined('_JEXEC') or die('Restricted access');
 
@@ -56,7 +49,6 @@ class VirtueMartOrderStore implements OrderStore
         return $out;
     }
 
-    /** The contract row for one order, or null. Reused by the checkout poll. */
     public function loadOne(int $orderId)
     {
         $db = \Joomla\CMS\Factory::getContainer()->get(\Joomla\Database\DatabaseInterface::class);
@@ -84,8 +76,7 @@ class VirtueMartOrderStore implements OrderStore
             'matches'         => $matches,
             'xmr_amount'      => (string) ($r->xmr_amount !== null ? $r->xmr_amount : '0'),
             'status'          => 'pending',
-            // extra (not part of the OrderStore contract; the Settler ignores it): funds seen so far,
-            // so the checkout poll can report partial-payment progress to the buyer.
+
             'received_pico'   => (string) (isset($r->xmr_received_pico) && $r->xmr_received_pico !== null ? $r->xmr_received_pico : '0'),
         );
     }
@@ -123,8 +114,6 @@ class VirtueMartOrderStore implements OrderStore
     {
         $db = \Joomla\CMS\Factory::getContainer()->get(\Joomla\Database\DatabaseInterface::class);
 
-        // claim the txid on this order's row: the WHERE xmr_txid IS NULL means only one of two
-        // overlapping runs flips it; the loser's affected-rows is 0 and bails before crediting.
         $db->setQuery(
             'UPDATE ' . $db->quoteName($this->table)
             . ' SET ' . $db->quoteName('xmr_txid') . ' = ' . $db->quote($txid)
@@ -134,12 +123,9 @@ class VirtueMartOrderStore implements OrderStore
         );
         $db->execute();
         if ((int) $db->getAffectedRows() === 0) {
-            return;   // another run already settled this order
+            return;
         }
 
-        // release the txid claim if we can't actually promote the order — otherwise the row is
-        // excluded from loadPending (xmr_txid set) and isSettled returns true, so a paid order would
-        // be stuck forever. releasing lets the next run retry.
         $release = function () use ($db, $orderId) {
             try {
                 $db->setQuery('UPDATE ' . $db->quoteName($this->table) . ' SET ' . $db->quoteName('xmr_txid') . ' = NULL WHERE ' . $db->quoteName('virtuemart_order_id') . ' = ' . (int) $orderId . ' ORDER BY ' . $db->quoteName('id') . ' DESC LIMIT 1');
@@ -150,7 +136,7 @@ class VirtueMartOrderStore implements OrderStore
 
         if (!class_exists('VmModel')) {
             $release();
-            return;   // VirtueMart not bootstrapped (should not happen from the plugin / task)
+            return;
         }
         try {
             $modelOrder = VmModel::getModel('orders');

@@ -1,14 +1,6 @@
 <?php
+// Schedule reconciliation of VirtueMart payments.
 
-/**
- * Joomla 5 Scheduler task that settles pending Monero (xmr-pay) VirtueMart orders. Monero has no
- * payment webhook, so on each run we sweep every published xmr-pay VirtueMart payment method, scan
- * its pending orders with the view-key engine, and mark paid the ones a confirmed on-chain payment
- * has covered. The checkout poll settles a single order on demand; this is the scheduled backstop.
- *
- * VirtueMart, like HikaShop, assumes a web application, so this runs under Joomla's Web Cron, not the
- * CLI scheduler.
- */
 
 namespace XmrPay\Plugin\Task\XmrpaySettleVm\Extension;
 
@@ -54,7 +46,7 @@ final class XmrpaySettleVm extends CMSPlugin implements SubscriberInterface
             $this->logTask('xmrpay settle vm: VirtueMart is not installed', 'warning');
             return Status::KNOCKOUT;
         }
-        // bootstrap VirtueMart (web-app context: the scheduler runs under a real SiteApplication)
+
         require_once $vmAdmin . '/helpers/config.php';
         \VmConfig::loadConfig();
         if (!class_exists('VmModel')) {
@@ -80,7 +72,7 @@ final class XmrpaySettleVm extends CMSPlugin implements SubscriberInterface
         foreach ($methods as $m) {
             $p = $this->parseParams($m->payment_params);
             if (empty($p['xmr_address']) || empty($p['xmr_view_key'])) {
-                continue;   // method not configured yet
+                continue;
             }
 
             $cfg = [
@@ -114,7 +106,6 @@ final class XmrpaySettleVm extends CMSPlugin implements SubscriberInterface
         return Status::OK;
     }
 
-    /** Parse VirtueMart's pipe-delimited key="value"| payment_params into an assoc array. */
     private function parseParams($raw): array
     {
         $out = [];

@@ -1,14 +1,6 @@
 <?php
+// Integrate Monero payments with VirtueMart.
 
-/**
- * xmr-pay for VirtueMart — a non-custodial Monero payment method.
- *
- * The order is placed pending at checkout; the buyer sees a receiving subaddress + the exact XMR
- * amount + a live poll. A Joomla scheduled task and this plugin's poll endpoint settle the order
- * once the engine confirms a real on-chain payment. View key only — no wallet-rpc, no daemon. The
- * Monero work lives in the vendored engine + adapter core; this file is the thin VirtueMart layer,
- * modelled on the bundled offline plugin (standard / bank transfer).
- */
 
 defined('_JEXEC') or die('Restricted access');
 
@@ -45,7 +37,6 @@ class plgVmPaymentXmrpay extends vmPSPlugin
         }
     }
 
-    /** The plugin's own per-order data table: scan state lives here, keyed by virtuemart_order_id. */
     public function getTableSQLFields()
     {
         return array(
@@ -58,7 +49,7 @@ class plgVmPaymentXmrpay extends vmPSPlugin
             'payment_currency'            => 'char(3)',
             'email_currency'              => 'char(3)',
             'tax_id'                      => 'smallint(1)',
-            // xmr-pay scan state
+
             'xmr_subaddress'              => 'varchar(106)',
             'xmr_amount'                  => 'varchar(32)',
             'xmr_rate'                    => 'varchar(32)',
@@ -78,9 +69,7 @@ class plgVmPaymentXmrpay extends vmPSPlugin
     function plgVmOnStoreInstallPaymentPluginTable($jplugin_id)
     {
         $r = $this->onStoreInstallPluginTable($jplugin_id);
-        // defence in depth on the txid dedup: a UNIQUE index makes a double-credit impossible even if
-        // the atomic UPDATE...WHERE xmr_txid IS NULL guard is ever weakened. Tolerant — ignore if the
-        // index already exists (re-install) or the DB engine rejects it.
+
         try {
             $db    = \Joomla\CMS\Factory::getContainer()->get(\Joomla\Database\DatabaseInterface::class);
             $table = $db->getPrefix() . 'virtuemart_payment_plg_xmrpay';
@@ -90,16 +79,11 @@ class plgVmPaymentXmrpay extends vmPSPlugin
                 $db->execute();
             }
         } catch (\Throwable $e) {
-            // non-fatal: the atomic UPDATE guard still protects against double credit
+
         }
         return $r;
     }
 
-    /**
-     * Order just placed. Lock the XMR amount + receiving subaddress onto a row in our table, record
-     * the chain tip as the order's birthday, leave the order in its pending status, and render the
-     * instructions screen (QR + amount + live poll). The order is NOT marked paid here.
-     */
     function plgVmConfirmedOrder($cart, $order)
     {
         if (!($method = $this->getVmPluginMethod($order['details']['BT']->virtuemart_paymentmethod_id))) {
@@ -134,9 +118,7 @@ class plgVmPaymentXmrpay extends vmPSPlugin
             $uri = $g->moneroUri($sub, $xmr, 'Order ' . $order['details']['BT']->order_number);
             $birthday = (int) $g->scanner()->tip_height();
         } catch (\Throwable $e) {
-            // node / rate unreachable at checkout: the amount stays empty, so the card shows the
-            // "couldn't set the price" state and the settler refuses to credit it (fail-closed). the
-            // buyer must reload or contact the merchant; there is no automatic re-lock.
+
         }
 
         $dbValues = array(
@@ -180,7 +162,6 @@ class plgVmPaymentXmrpay extends vmPSPlugin
         return true;
     }
 
-    /** Pending status for a freshly placed order: the method's configured value, else 'U'. */
     function getNewStatus($method)
     {
         $status = isset($method->status_pending) ? $method->status_pending : '';
@@ -244,10 +225,6 @@ class plgVmPaymentXmrpay extends vmPSPlugin
         return $html;
     }
 
-    /**
-     * The checkout "is it paid yet?" poll, served through VirtueMart's vmplg pluginNotification route
-     * (controllers/vmplg.php). Settles this one order on demand, answers JSON {paid,status}.
-     */
     function plgVmOnPaymentNotification(&$html = null)
     {
         $app     = \Joomla\CMS\Factory::getApplication();
@@ -258,28 +235,22 @@ class plgVmPaymentXmrpay extends vmPSPlugin
         if (!($row = $this->getDataByOrderId($orderId))) {
             return $this->pollResponse($app, false, 'not-found');
         }
-        // same generic answer as a missing row, so a caller can't tell xmrpay orders apart from others.
+
         if (!($method = $this->getVmPluginMethod($row->virtuemart_paymentmethod_id))) {
             return $this->pollResponse($app, false, 'not-found');
         }
 
         $cfg = $this->cfgFromMethod($method);
 
-        // an unconfigured method has an empty view key, which makes the HMAC token guessable. refuse
-        // to answer rather than expose a forgeable endpoint.
         if (empty($cfg['view_key'])) {
             return $this->pollResponse($app, false, 'not-found');
         }
 
-        // validate the per-order poll token (HMAC keyed on the view key) BEFORE revealing any state.
-        // without it a stranger could enumerate order ids and force node scans; respond generically.
         $token = (string) $app->input->getString('token', '');
         if (!hash_equals(Gateway::orderToken($orderId, (string) $cfg['view_key']), $token)) {
             return $this->pollResponse($app, false, 'not-found');
         }
 
-        // already settled: answer paid immediately, no rescan (keeps a re-opened payment page from
-        // spinning forever and avoids a pointless node scan on every poll of a done order).
         if (!empty($row->xmr_txid)) {
             return $this->pollResponse($app, true, 'already-paid');
         }
@@ -301,9 +272,7 @@ class plgVmPaymentXmrpay extends vmPSPlugin
         $paid   = !empty($rep['paid']);
         $status = $rep['status'];
         $extra  = array();
-        // partial-payment feedback: settleOrder just persisted received_pico. if some funds arrived but
-        // it is not yet paid (an underpayment, or the first of several txs), tell the buyer how much
-        // more to send — to the same address, since the engine sums payments to the subaddress.
+
         if (!$paid && $status === 'ok') {
             $after = $store->loadOne($orderId);
             $pf    = Gateway::partialFeedback((string) $orderRow['xmr_amount'], $after ? (isset($after['received_pico']) ? $after['received_pico'] : '0') : '0');
@@ -316,7 +285,6 @@ class plgVmPaymentXmrpay extends vmPSPlugin
         return $this->pollResponse($app, $paid, $status, $extra);
     }
 
-    /** Validate the address + view key against each other when the merchant saves the method. */
     function plgVmSetOnTablePluginParamsPayment($name, $id, &$table)
     {
         $r = $this->setOnTablePluginParams($name, $id, $table);
@@ -332,10 +300,7 @@ class plgVmPaymentXmrpay extends vmPSPlugin
                     } elseif (empty(trim((string) $table->xmr_nodes))) {
                         \Joomla\CMS\Factory::getApplication()->enqueueMessage('xmr-pay: no node is configured, so payments will never be detected. Add at least one Monero node (one per line).', 'warning');
                     } elseif (!\Joomla\CMS\Factory::getApplication()->isClient('administrator')) {
-                        // this hook can in principle be reached from a non-interactive path (a CLI
-                        // provisioning script, a bulk config import); only probe the network from an
-                        // actual admin-backend request, so a script updating params in bulk never
-                        // inherits a slow/blocking network call it didn't ask for.
+
                     } else {
                         try {
                             $probeCfg = $this->cfgFromMethod($table);
@@ -347,8 +312,7 @@ class plgVmPaymentXmrpay extends vmPSPlugin
                     }
                 }
             } catch (\Throwable $e) {
-                // an unexpected local error -- not a network message, since the network check itself
-                // is inside the nested try above.
+
             }
         }
         return $r;
@@ -363,8 +327,6 @@ class plgVmPaymentXmrpay extends vmPSPlugin
     {
         return $this->onShowOrderPrint($order_number, $method_id);
     }
-
-    // --- helpers ---------------------------------------------------------------------------------
 
     private function cfgFromMethod($method)
     {
@@ -390,15 +352,11 @@ class plgVmPaymentXmrpay extends vmPSPlugin
         $app->close();
     }
 
-    /** Check every saved node independently so a broken secondary is never hidden by failover. */
     private function probeNodes(array $cfg)
     {
         $nodes   = \XmrPay\NodeConfig::normalizeList($cfg['nodes']);
         $public  = \XmrPay\NodeConfig::publicList($nodes);
-        // a short dedicated timeout, and a cap on how many rows this save-time probe touches,
-        // keep a save with several dead nodes from hanging the admin request past PHP's/the
-        // webserver's execution limit; the real settlement scan (Settler/task) is unaffected,
-        // it builds its own Gateway with the configured timeout.
+
         $cfg['http_timeout'] = 5;
         $results = array();
         foreach (array_slice($nodes, 0, 6, true) as $index => $node) {
@@ -417,7 +375,6 @@ class plgVmPaymentXmrpay extends vmPSPlugin
         return $results;
     }
 
-    /** Node failures are warnings only. Saving remains non-blocking and explicit. */
     private function reportNodeProbe($results)
     {
         $app = \Joomla\CMS\Factory::getApplication();

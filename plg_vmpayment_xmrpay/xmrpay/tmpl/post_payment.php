@@ -1,9 +1,6 @@
 <?php
+// Render the VirtueMart payment response.
 
-/**
- * Checkout instructions screen, rendered by $this->renderByLayout('post_payment', ...) in
- * plgVmConfirmedOrder. Maps VirtueMart's $viewData onto the shared xmr-pay payment card.
- */
 
 defined('_JEXEC') or die('Restricted access');
 

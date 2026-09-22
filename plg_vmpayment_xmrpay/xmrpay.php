@@ -37,6 +37,14 @@ class plgVmPaymentXmrpay extends vmPSPlugin
         }
     }
 
+    protected function createPluginTableObject($tableName, $tableFields, $primaryKey, $tableId, $loggable = false)
+    {
+        $table = parent::createPluginTableObject($tableName, $tableFields, $primaryKey, $tableId, $loggable);
+        // VirtueMart defaults every field to zero and ignores NULL values during binding.
+        $table->xmr_txid = null;
+        return $table;
+    }
+
     public function getTableSQLFields()
     {
         return array(
@@ -73,6 +81,8 @@ class plgVmPaymentXmrpay extends vmPSPlugin
         try {
             $db    = \Joomla\CMS\Factory::getContainer()->get(\Joomla\Database\DatabaseInterface::class);
             $table = $db->getPrefix() . 'virtuemart_payment_plg_xmrpay';
+            $db->setQuery('UPDATE ' . $db->quoteName($table) . " SET xmr_txid = NULL WHERE xmr_txid = '0'");
+            $db->execute();
             $db->setQuery("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = " . $db->quote($table) . " AND index_name = 'uk_xmrpay_txid'");
             if (!(int) $db->loadResult()) {
                 $db->setQuery('ALTER TABLE ' . $db->quoteName($table) . ' ADD UNIQUE KEY ' . $db->quoteName('uk_xmrpay_txid') . ' (' . $db->quoteName('xmr_txid') . ')');

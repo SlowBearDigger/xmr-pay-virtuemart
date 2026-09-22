@@ -58,7 +58,7 @@ final class XmrpaySettleVm extends CMSPlugin implements SubscriberInterface
 
         $db = Factory::getContainer()->get(DatabaseInterface::class);
         $q  = $db->getQuery(true)
-            ->select($db->quoteName(['virtuemart_paymentmethod_id', 'payment_params']))
+            ->select($db->quoteName('virtuemart_paymentmethod_id'))
             ->from($db->quoteName('#__virtuemart_paymentmethods'))
             ->where($db->quoteName('payment_element') . ' = ' . $db->quote('xmrpay'))
             ->where($db->quoteName('published') . ' = 1');
@@ -70,7 +70,7 @@ final class XmrpaySettleVm extends CMSPlugin implements SubscriberInterface
         $settled    = 0;
 
         foreach ($methods as $m) {
-            $p = $this->parseParams($m->payment_params);
+            $p = (array) \VmModel::getModel('paymentmethod')->getPayment((int) $m->virtuemart_paymentmethod_id);
             if (empty($p['xmr_address']) || empty($p['xmr_view_key'])) {
                 continue;
             }
@@ -106,14 +106,4 @@ final class XmrpaySettleVm extends CMSPlugin implements SubscriberInterface
         return Status::OK;
     }
 
-    private function parseParams($raw): array
-    {
-        $out = [];
-        if (preg_match_all('/(\w+)="([^"]*)"/', (string) $raw, $m, PREG_SET_ORDER)) {
-            foreach ($m as $pair) {
-                $out[$pair[1]] = $pair[2];
-            }
-        }
-        return $out;
-    }
 }

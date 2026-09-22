@@ -76,3 +76,14 @@ before deployment. Source tests and a prior platform run do not validate a new b
   Web Cron, not the CLI scheduler.
 - The plugin reads its config via VM's param machinery (`$method->xmr_address` etc.); the inner data
   table holds only per-order scan state.
+
+### Storage regression check
+
+On a disposable Joomla installation with VirtueMart and the candidate plugin installed, run
+`XMRPAY_JOOMLA_BOOTSTRAP=/path/to/test-bootstrap.php php tests/storage.test.php`.
+The bootstrap must initialize the Joomla administrator services and database. The check uses
+VirtueMart's real table binding, writes two temporary payment rows, checks NULL transaction IDs
+and transaction readback, and rolls back its database transaction. Do not run it on production.
+After upgrading, save the Monero payment method once to repair legacy zero transaction placeholders.
+
+Settlement requires InnoDB order, payment and history tables. The pending-state check, transaction claim and native status update share a row lock and transaction. Older installations using nontransactional tables must migrate those tables before enabling settlement.

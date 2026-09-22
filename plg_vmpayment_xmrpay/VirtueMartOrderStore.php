@@ -113,32 +113,30 @@ class VirtueMartOrderStore implements OrderStore
     public function markPaid(int $orderId, string $txid, array $verdict): void
     {
         $db = \Joomla\CMS\Factory::getContainer()->get(\Joomla\Database\DatabaseInterface::class);
-
-        $db->setQuery(
-            'UPDATE ' . $db->quoteName($this->table)
-            . ' SET ' . $db->quoteName('xmr_txid') . ' = ' . $db->quote($txid)
-            . ' WHERE ' . $db->quoteName('virtuemart_order_id') . ' = ' . (int) $orderId
-            . ' AND ' . $db->quoteName('xmr_txid') . ' IS NULL'
-            . ' ORDER BY ' . $db->quoteName('id') . ' DESC LIMIT 1'
-        );
-        $db->execute();
-        if ((int) $db->getAffectedRows() === 0) {
-            return;
-        }
-
-        $release = function () use ($db, $orderId) {
-            try {
-                $db->setQuery('UPDATE ' . $db->quoteName($this->table) . ' SET ' . $db->quoteName('xmr_txid') . ' = NULL WHERE ' . $db->quoteName('virtuemart_order_id') . ' = ' . (int) $orderId . ' ORDER BY ' . $db->quoteName('id') . ' DESC LIMIT 1');
-                $db->execute();
-            } catch (\Throwable $e) {
-            }
-        };
-
-        if (!class_exists('VmModel')) {
-            $release();
-            return;
-        }
+        // Keep the pending check, transaction claim and native update atomic.
+        $db->transactionStart(true);
         try {
+            $db->setQuery('SELECT order_status FROM #__virtuemart_orders WHERE virtuemart_order_id=' . (int) $orderId
+                . ($this->paymentId > 0 ? ' AND virtuemart_paymentmethod_id=' . $this->paymentId : '') . ' FOR UPDATE');
+            if ($db->loadResult() !== $this->pendingStatus) {
+                throw new RuntimeException('Order is no longer pending for this payment method');
+            }
+
+            $db->setQuery(
+                'UPDATE ' . $db->quoteName($this->table)
+                . ' SET ' . $db->quoteName('xmr_txid') . ' = ' . $db->quote($txid)
+                . ' WHERE ' . $db->quoteName('virtuemart_order_id') . ' = ' . (int) $orderId
+                . ' AND ' . $db->quoteName('xmr_txid') . ' IS NULL'
+                . ' ORDER BY ' . $db->quoteName('id') . ' DESC LIMIT 1'
+            );
+            $db->execute();
+            if ((int) $db->getAffectedRows() === 0) {
+                throw new RuntimeException('Payment transaction was not claimed');
+            }
+
+            if (!class_exists('VmModel')) {
+                throw new RuntimeException('VirtueMart order model is unavailable');
+            }
             $modelOrder = VmModel::getModel('orders');
             $modelOrder->updateStatusForOneOrder($orderId, array(
                 'virtuemart_order_id' => $orderId,
@@ -146,9 +144,15 @@ class VirtueMartOrderStore implements OrderStore
                 'customer_notified'   => 1,
                 'comments'            => 'XMR payment confirmed. txid: ' . $txid,
             ), true);
+            $db->setQuery('SELECT order_status FROM #__virtuemart_orders WHERE virtuemart_order_id=' . (int) $orderId);
+            if ($db->loadResult() !== $this->paidStatus) {
+                throw new RuntimeException('Native order status update failed');
+            }
+            $db->transactionCommit(true);
         } catch (\Throwable $e) {
-            $release();
+            $db->transactionRollback(true);
             throw $e;
         }
     }
+
 }

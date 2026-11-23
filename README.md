@@ -81,9 +81,17 @@ before deployment. Source tests and a prior platform run do not validate a new b
 
 On a disposable Joomla installation with VirtueMart and the candidate plugin installed, run
 `XMRPAY_JOOMLA_BOOTSTRAP=/path/to/test-bootstrap.php php tests/storage.test.php`.
-The bootstrap must initialize the Joomla administrator services and database. The check uses
-VirtueMart's real table binding, writes two temporary payment rows, checks NULL transaction IDs
-and transaction readback, and rolls back its database transaction. Do not run it on production.
-After upgrading, save the Monero payment method once to repair legacy zero transaction placeholders.
+The bootstrap must initialize native Joomla services and the database. The check invokes
+VirtueMart's native installation hook, then verifies real table binding, NULL transaction IDs,
+transaction readback and duplicate rejection. Temporary payment rows are rolled back; the native
+installation hook can update the disposable schema. Do not run it on production.
+After upgrading, save the Monero payment method once to install the claim index and repair
+legacy zero transaction placeholders. Index errors are reported without removing stored transactions.
+
+Returning to native order details restores a pending payment request from its stored address
+and quote. It does not issue another quote or move the scan birthday. With a disposable native
+fixture, set `XMRPAY_JOOMLA_BOOTSTRAP` and `XMRPAY_TEST_ORDER_ID`, then run
+`php tests/progress-storage.test.php` and `php tests/payment-resume.test.php` to check stored
+progress and payment-page reentry.
 
 Settlement requires InnoDB order, payment and history tables. The pending-state check, transaction claim and native status update share a row lock and transaction. Older installations using nontransactional tables must migrate those tables before enabling settlement.

@@ -76,20 +76,24 @@ class plgVmPaymentXmrpay extends vmPSPlugin
 
     function plgVmOnStoreInstallPaymentPluginTable($jplugin_id)
     {
-        $r = $this->onStoreInstallPluginTable($jplugin_id);
+        return $this->onStoreInstallPluginTable();
+    }
 
-        try {
-            $db    = \Joomla\CMS\Factory::getContainer()->get(\Joomla\Database\DatabaseInterface::class);
-            $table = $db->getPrefix() . 'virtuemart_payment_plg_xmrpay';
-            $db->setQuery('UPDATE ' . $db->quoteName($table) . " SET xmr_txid = NULL WHERE xmr_txid = '0'");
+    public function onStoreInstallPluginTable()
+    {
+        $r = parent::onStoreInstallPluginTable();
+        if ($r === false) {
+            return false;
+        }
+
+        $db    = \Joomla\CMS\Factory::getContainer()->get(\Joomla\Database\DatabaseInterface::class);
+        $table = $db->getPrefix() . 'virtuemart_payment_plg_xmrpay';
+        $db->setQuery('UPDATE ' . $db->quoteName($table) . " SET xmr_txid = NULL WHERE xmr_txid = '0'");
+        $db->execute();
+        $db->setQuery("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = " . $db->quote($table) . " AND index_name = 'uk_xmrpay_txid' AND non_unique = 0 AND column_name = 'xmr_txid'");
+        if (!(int) $db->loadResult()) {
+            $db->setQuery('ALTER TABLE ' . $db->quoteName($table) . ' ADD UNIQUE KEY ' . $db->quoteName('uk_xmrpay_txid') . ' (' . $db->quoteName('xmr_txid') . ')');
             $db->execute();
-            $db->setQuery("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = " . $db->quote($table) . " AND index_name = 'uk_xmrpay_txid'");
-            if (!(int) $db->loadResult()) {
-                $db->setQuery('ALTER TABLE ' . $db->quoteName($table) . ' ADD UNIQUE KEY ' . $db->quoteName('uk_xmrpay_txid') . ' (' . $db->quoteName('xmr_txid') . ')');
-                $db->execute();
-            }
-        } catch (\Throwable $e) {
-
         }
         return $r;
     }
@@ -213,6 +217,34 @@ class plgVmPaymentXmrpay extends vmPSPlugin
     function plgVmOnShowOrderFEPayment($virtuemart_order_id, $virtuemart_paymentmethod_id, &$payment_name)
     {
         $this->onShowOrderFE($virtuemart_order_id, $virtuemart_paymentmethod_id, $payment_name);
+        if (!$this->selectedThisByMethodId($virtuemart_paymentmethod_id)
+            || !($method = $this->getVmPluginMethod($virtuemart_paymentmethod_id))
+            || !($row = $this->getDataByOrderId($virtuemart_order_id))
+            || (int) $row->virtuemart_paymentmethod_id !== (int) $virtuemart_paymentmethod_id
+            || !empty($row->xmr_txid) || empty($row->xmr_subaddress)
+            || empty($row->xmr_amount) || empty($row->xmr_birthday_height)) {
+            return null;
+        }
+        if (!$this->isPendingOrder($virtuemart_order_id, $this->getNewStatus($method))) {
+            return null;
+        }
+        $cfg = $this->cfgFromMethod($method);
+        if (empty($cfg['view_key'])) {
+            return null;
+        }
+        // The native order view has already authorized access; reuse its issued request.
+        $payment_name .= $this->renderByLayout('post_payment', array(
+            'order_number' => $row->order_number,
+            'displayTotalInPaymentCurrency' => $row->payment_order_total . ' ' . $row->payment_currency,
+            'xmr_subaddress' => $row->xmr_subaddress,
+            'xmr_amount' => $row->xmr_amount,
+            'xmr_uri' => (new Gateway($cfg))->moneroUri($row->xmr_subaddress, $row->xmr_amount, 'Order ' . $row->order_number),
+            'order_id' => (int) $virtuemart_order_id,
+            'min_confirmations' => (int) $cfg['min_confirmations'],
+            'poll_url' => 'index.php?option=com_virtuemart&view=vmplg&task=pluginNotification&on=' . (int) $virtuemart_order_id . '&token=' . Gateway::orderToken((int) $virtuemart_order_id, (string) $cfg['view_key']),
+            'node_error' => false,
+            'return_url' => isset($method->xmr_return_url) ? (string) $method->xmr_return_url : '',
+        ));
     }
 
     function plgVmOnShowOrderBEPayment($virtuemart_order_id, $virtuemart_payment_id)
@@ -264,6 +296,9 @@ class plgVmPaymentXmrpay extends vmPSPlugin
         if (!empty($row->xmr_txid)) {
             return $this->pollResponse($app, true, 'already-paid');
         }
+        if (!$this->isPendingOrder($orderId, $this->getNewStatus($method))) {
+            return $this->pollResponse($app, false, 'not-found');
+        }
 
         $store = new VirtueMartOrderStore(array(
             'table'          => $this->_tablename,
@@ -283,16 +318,31 @@ class plgVmPaymentXmrpay extends vmPSPlugin
         $status = $rep['status'];
         $extra  = array();
 
+        if (!$paid && !$this->isPendingOrder($orderId, $this->getNewStatus($method))) {
+            return $this->pollResponse($app, false, 'not-found');
+        }
         if (!$paid && $status === 'ok') {
             $after = $store->loadOne($orderId);
-            $pf    = Gateway::partialFeedback((string) $orderRow['xmr_amount'], $after ? (isset($after['received_pico']) ? $after['received_pico'] : '0') : '0');
-            if ($pf !== null) {
-                $status = 'partial';
-                $extra  = $pf;
+            $scanStatus = isset($rep['scan_status']) ? $rep['scan_status'] : 'incomplete';
+            if (!in_array($scanStatus, array('complete', 'incomplete', 'waiting-birthday', 'reorg-detected'), true)) {
+                $status = 'error';
+            } elseif ($scanStatus !== 'complete' || !$after || ($after['scan_complete'] ?? false) !== true) {
+                $status = 'processing';
+            } else {
+                $extra = Gateway::paymentFeedback((string) $orderRow['xmr_amount'], $after['received_pico'] ?? null, $after['seen_pico'] ?? null);
+                $status = $extra['status'];
+                unset($extra['status']);
             }
         }
 
         return $this->pollResponse($app, $paid, $status, $extra);
+    }
+
+    private function isPendingOrder($orderId, $pendingStatus)
+    {
+        $db = \Joomla\CMS\Factory::getContainer()->get(\Joomla\Database\DatabaseInterface::class);
+        $db->setQuery('SELECT order_status FROM #__virtuemart_orders WHERE virtuemart_order_id=' . (int) $orderId);
+        return $db->loadResult() === $pendingStatus;
     }
 
     function plgVmSetOnTablePluginParamsPayment($name, $id, &$table)

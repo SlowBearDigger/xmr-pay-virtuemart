@@ -63,22 +63,25 @@ class VirtueMartOrderStore implements OrderStore
             return null;
         }
 
-        $matches = array();
-        if (!empty($r->xmr_matches)) {
-            $decoded = json_decode($r->xmr_matches, true);
-            $matches = is_array($decoded) ? $decoded : array();
-        }
+        $progress = $this->decodeProgress($r->xmr_matches);
 
-        return array(
+        $result = array(
             'id'              => $orderId,
             'birthday_height' => (int) $r->xmr_birthday_height,
             'scanned_to'      => (int) $r->xmr_scanned_to,
-            'matches'         => $matches,
+            'matches'         => $progress['matches'],
             'xmr_amount'      => (string) ($r->xmr_amount !== null ? $r->xmr_amount : '0'),
             'status'          => 'pending',
 
             'received_pico'   => (string) (isset($r->xmr_received_pico) && $r->xmr_received_pico !== null ? $r->xmr_received_pico : '0'),
         );
+        foreach (array('scan_checkpoint', 'partial_block', 'scan_complete', 'seen_pico',
+            'invoice_status', 'funded_at', 'funded_amount_atomic', 'closed_reason') as $field) {
+            if (array_key_exists($field, $progress)) {
+                $result[$field] = $progress[$field];
+            }
+        }
+        return $result;
     }
 
     public function saveProgress(int $orderId, array $patch): void
@@ -87,7 +90,14 @@ class VirtueMartOrderStore implements OrderStore
         $set = array();
         if (array_key_exists('birthday_height', $patch)) $set[] = $db->quoteName('xmr_birthday_height') . ' = ' . (int) $patch['birthday_height'];
         if (array_key_exists('scanned_to', $patch))      $set[] = $db->quoteName('xmr_scanned_to') . ' = ' . (int) $patch['scanned_to'];
-        if (array_key_exists('matches', $patch))         $set[] = $db->quoteName('xmr_matches') . ' = ' . $db->quote(json_encode($patch['matches']));
+        $progressPatch = array_intersect_key($patch, array_flip(array('matches', 'scan_checkpoint', 'partial_block',
+            'scan_complete', 'seen_pico', 'invoice_status', 'funded_at', 'funded_amount_atomic', 'closed_reason')));
+        if ($progressPatch) {
+            $db->setQuery('SELECT xmr_matches FROM ' . $db->quoteName($this->table)
+                . ' WHERE virtuemart_order_id=' . (int) $orderId . ' ORDER BY id DESC LIMIT 1');
+            $progress = array_merge($this->decodeProgress($db->loadResult()), $progressPatch);
+            $set[] = $db->quoteName('xmr_matches') . ' = ' . $db->quote(json_encode($progress, JSON_THROW_ON_ERROR));
+        }
         if (array_key_exists('received_pico', $patch))   $set[] = $db->quoteName('xmr_received_pico') . ' = ' . $db->quote((string) $patch['received_pico']);
         if (!$set) {
             return;
@@ -97,6 +107,22 @@ class VirtueMartOrderStore implements OrderStore
             . ' ORDER BY ' . $db->quoteName('id') . ' DESC LIMIT 1';
         $db->setQuery($q);
         $db->execute();
+    }
+
+    private function decodeProgress($raw): array
+    {
+        $decoded = json_decode((string) $raw, true);
+        if (!is_array($decoded)) {
+            return array('matches' => array());
+        }
+        // Older rows contain only the match list; keep them readable until their next scan.
+        if (!array_key_exists('matches', $decoded)) {
+            return array('matches' => $decoded);
+        }
+        if (!is_array($decoded['matches'])) {
+            $decoded['matches'] = array();
+        }
+        return $decoded;
     }
 
     public function isSettled(string $txid): bool
